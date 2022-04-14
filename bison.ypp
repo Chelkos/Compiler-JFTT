@@ -1,0 +1,162 @@
+
+%{
+	#include "codeGenerator.hpp"
+    #include "Memory/lookupTab.hpp"
+    #include "Conditions.hpp"
+    #include "errorHandler.hpp"
+    #include "Expressions.hpp"
+    #include "Values.hpp"
+    #include<list>
+    #include<string>
+    #include<iostream>
+    using namespace std;
+	extern int yylex();
+    extern int yylineno;
+    extern FILE *yyin;
+    int yyerror( string str);
+    list<string>* root = new list<string>;
+    
+%}
+%token <token> VAR BEGIN_ END
+%token <token> READ WRITE
+%token <token> PLUS MINUS TIMES DIV MOD
+%token <token> EQ NEQ LE GE LEQ GEQ
+%token <token> IF THEN ELSE ENDIF
+%token <token> WHILE DO REPEAT UNTIL ENDWHILE
+%token <token> FOR FROM TO DOWNTO ENDFOR
+%token <token> ASSIGN
+%token  pidentifier
+%token  num
+%union {
+	long long int numb;
+	string* pid;
+    expr* Expr;
+    cond* Cond;
+    list<string>* commands;
+    list<string>* command;
+    value* val;
+    value* id;
+    value* it;
+}
+%type <it> iterator
+%type <commands> commands
+%type <command> command
+%type <Expr> expression
+%type <Cond> condition
+%type <pid> pidentifier
+%type <numb> num
+%type<val> value
+%type<id> identifier 
+
+%%
+program:
+
+    VAR declarations BEGIN_ commands END                         {root = $4;}
+    | BEGIN_ commands END                                            {root = $2;}
+    ;
+
+declarations:
+
+    declarations',' pidentifier                                     {createEl(yylineno,*$3);}
+    | declarations',' pidentifier'['num':'num']'                    {createArr($5,$7,yylineno,*$3);}
+    | pidentifier                                                   {createEl(yylineno,*$1);}
+    | pidentifier'['num':'num']'                                    {createArr($3,$5,yylineno,*$1);}
+    ;
+
+commands:
+
+    commands command                                                    {connectCommandLists($1,$2);}
+    | command                                                           {$$ = createCommandList($1);}
+    ;
+
+command:
+
+    identifier ASSIGN expression';'                                   {$$ = ASSIGNc($1,$3,yylineno);}
+    | IF condition THEN commands ELSE commands ENDIF                  {$$ = IFELSEc($2,$4,$6,yylineno);}
+    | IF condition THEN commands ENDIF                                {$$ = IFc($2,$4,yylineno);}
+    | WHILE condition DO commands ENDWHILE                            {$$ = WHILEc($2,$4,yylineno);}
+    | REPEAT commands UNTIL condition';'        	                  {$$ = REPEATc($4,$2,yylineno);}
+    | FOR iterator FROM value TO value DO commands ENDFOR             {$$ = FORTc($2,$4,$6,yylineno,$8);
+                                                                       deleteIt(yylineno,$2);
+                                                                       deleteEndIt(yylineno,$2);}                              
+    | FOR iterator FROM value DOWNTO value DO commands ENDFOR      {$$ = FORDc($2,$4,$6,yylineno,$8);
+                                                                        deleteIt(yylineno,$2);
+                                                                        deleteEndIt(yylineno,$2);}
+    | READ identifier';'                                              {$$ = READc($2,yylineno);}
+    | WRITE value';'                                                  {$$ = WRITEc($2,yylineno);}
+    ;
+iterator:
+    pidentifier {createIt(yylineno,$1);
+                createEndIt(yylineno,$1);
+                $$= genVAR(*$1,yylineno);}
+;
+expression:
+
+    value                       {$$ = generateExpr($1,$1,"VAL");}
+    | value PLUS value          {$$ = generateExpr($1,$3,"PLUS");}
+    | value MINUS value         {$$ = generateExpr($1,$3,"MINUS");}
+    | value TIMES value         {$$ = generateExpr($1,$3,"TIMES");}
+    | value DIV value           {$$ = generateExpr($1,$3,"DIV");}
+    | value MOD value           {$$ = generateExpr($1,$3,"MOD");}
+    ;
+
+condition:
+
+    value EQ value              {$$ =  genCondEQ($1,$3);}
+    | value NEQ value           {$$ =  genCondNEQ($1,$3);}
+    | value LE value            {$$ =  genCondLE($1,$3);}
+    | value GE value            {$$ = genCondGE($1,$3);}
+    | value LEQ value           {$$ =  genCondLEQ($1,$3);}
+    | value GEQ value           {$$ =  genCondGEQ($1,$3);}
+    ;
+
+value:
+
+    num                         {$$ =  genVAL($1,yylineno);}
+    | identifier                {$$ = $1;}
+    ;
+
+identifier:
+
+    pidentifier                                 {$$ =  genVAR(*$1,yylineno);}
+    | pidentifier'['pidentifier']'              {$$ =  genARRV(*$1,*$3,yylineno);}
+    | pidentifier'['num']'                      {$$ =  genARRC(*$1,$3,yylineno);}
+    ;
+
+%%
+
+int yyerror(string err) {
+    cout<< "Niepoprawna skladnia"<<endl;
+    exit(-1);
+    return 1;
+}
+int main(int argv, char* argc[]) {
+    if( argv != 3 ) {
+        cerr << "Prawidlowe wywolanie: ./kompilator plik_wejsciowy plik_wyjsciowy" << endl;
+        return 1;
+    }
+
+    yyin = fopen(argc[1], "r");
+    if (yyin == NULL){
+        cout << "Plik nie istnieje" << endl;
+        return 1;
+    }
+    string FileName = argc[1];
+    string OutputFile = argc[2];
+    ofstream file;
+    yyparse();
+      cout << "Kompilacja zakonczona pomyslnie" << endl;
+    file.open(OutputFile);
+    for(string s: *root){
+        file<<s<<endl;
+    }
+    file<<"HALT"<<endl;
+    file.close();
+	
+    
+    
+    
+
+    return 0;
+}
+
